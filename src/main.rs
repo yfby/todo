@@ -173,6 +173,11 @@ impl App {
 
                 self.current_interface = CurrentInterface::Write;
             }
+            KeyCode::Char('d') | KeyCode::Delete => {
+                if let Some(index) = self.menu_state.selected() {
+                    self.task_collection.remove_list(index);
+                }
+            }
             KeyCode::Char('q') => self.exit(),
             KeyCode::Char('w') => self.save(),
             _ => {}
