@@ -23,6 +23,8 @@ struct App {
     exit: bool,
     current_layout: CurrentLayout,
     current_interface: CurrentInterface,
+    previous_layout: CurrentLayout,
+    previous_interface: CurrentInterface,
     task_collection: task::TaskListCollection,
     menu_state: ListState,
     write_input: WriteInterface,
@@ -44,8 +46,6 @@ enum CurrentInterface {
 }
 
 struct WriteInterface {
-    previous_layout: CurrentLayout,
-    previous_interface: CurrentInterface,
     input: String,
     character_index: usize,
 }
@@ -92,7 +92,8 @@ impl WriteInterface {
         new_cursor_pos.clamp(0, self.input.chars().count())
     }
 
-    const fn reset_cursor(&mut self) {
+    fn reset_cursor(&mut self) {
+        self.input.clear();
         self.character_index = 0;
     }
 
@@ -107,11 +108,11 @@ impl Default for App {
             exit: false,
             current_layout: CurrentLayout::Task,
             current_interface: CurrentInterface::TaskMenu,
+            previous_layout: CurrentLayout::Task,
+            previous_interface: CurrentInterface::TaskMenu,
             task_collection: task::load_or_default(SAVE_FILE),
             menu_state: ListState::default().with_selected(Some(0)),
             write_input: WriteInterface {
-                previous_layout: CurrentLayout::Task,
-                previous_interface: CurrentInterface::TaskMenu,
                 input: String::new(),
                 character_index: 0,
             },
@@ -166,8 +167,8 @@ impl App {
             KeyCode::Char('j') | KeyCode::Up => self.menu_state.select_previous(),
             KeyCode::Char('l') | KeyCode::Left | KeyCode::Enter => self.menu_state.select(None),
             KeyCode::Char('a') => {
-                self.write_input.previous_layout = self.current_layout;
-                self.write_input.previous_interface = self.current_interface;
+                self.previous_layout = self.current_layout;
+                self.previous_interface = self.current_interface;
                 self.write_input.input = String::new();
                 self.write_input.reset_cursor();
 
@@ -190,16 +191,16 @@ impl App {
                 self.task_collection
                     .add_list(task::TaskList::new(self.write_input.final_input()));
 
-                self.current_layout = self.write_input.previous_layout;
-                self.current_interface = self.write_input.previous_interface;
+                self.current_layout = self.previous_layout;
+                self.current_interface = self.previous_interface;
             }
             KeyCode::Char(to_insert) => self.write_input.enter_char(to_insert),
             KeyCode::Backspace => self.write_input.delete_char(),
             KeyCode::Left => self.write_input.move_cursor_left(),
             KeyCode::Right => self.write_input.move_cursor_right(),
             KeyCode::Esc => {
-                self.current_layout = self.write_input.previous_layout;
-                self.current_interface = self.write_input.previous_interface;
+                self.current_layout = self.previous_layout;
+                self.current_interface = self.previous_interface;
             }
             _ => {}
         }
