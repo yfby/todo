@@ -9,6 +9,8 @@ use ratatui::{
 };
 use std::io;
 
+use crate::CurrentInterface::TaskBody;
+
 mod sample;
 mod task;
 
@@ -27,6 +29,7 @@ struct App {
     previous_interface: CurrentInterface,
     task_collection: task::TaskListCollection,
     menu_state: ListState,
+    task_state: ListState,
     write_input: WriteInterface,
     cursor_position: Option<Position>,
 }
@@ -119,6 +122,7 @@ impl Default for App {
             previous_interface: CurrentInterface::TaskMenu,
             task_collection: task::load_or_default(SAVE_FILE),
             menu_state: ListState::default().with_selected(Some(0)),
+            task_state: ListState::default().with_selected(Some(0)),
             write_input: WriteInterface {
                 input: String::new(),
                 character_index: 0,
@@ -156,6 +160,16 @@ impl App {
         };
         Ok(())
     }
+
+    fn enter_write(&mut self, write_type: WriteType) {
+        self.previous_layout = self.current_layout;
+        self.previous_interface = self.current_interface;
+        self.write_input.input = String::new();
+        self.write_input.reset_cursor();
+        self.write_input.write_type = write_type;
+
+        self.current_interface = CurrentInterface::Write;
+    }
 }
 
 /// Event Logic
@@ -163,7 +177,7 @@ impl App {
     fn handle_key_event(&mut self, key_event: KeyEvent) {
         match self.current_interface {
             CurrentInterface::TaskMenu => self.key_event_task_menu(key_event),
-            CurrentInterface::TaskBody => todo!(),
+            CurrentInterface::TaskBody => self.key_event_task_body(key_event),
             CurrentInterface::Write => self.key_event_write(key_event),
             CurrentInterface::Exit => todo!(),
         }
@@ -174,22 +188,41 @@ impl App {
             KeyCode::Esc => self.menu_state.select(None),
             KeyCode::Char('k') | KeyCode::Down => self.menu_state.select_next(),
             KeyCode::Char('j') | KeyCode::Up => self.menu_state.select_previous(),
-            KeyCode::Char('l') | KeyCode::Left | KeyCode::Enter => todo!(),
+            KeyCode::Char('l') | KeyCode::Right | KeyCode::Enter => {
+                self.current_interface = CurrentInterface::TaskBody
+            }
             KeyCode::Char('a') => {
-                self.previous_layout = self.current_layout;
-                self.previous_interface = self.current_interface;
-                self.write_input.input = String::new();
-                self.write_input.reset_cursor();
-
-                self.current_interface = CurrentInterface::Write;
+                self.enter_write(WriteType::Menu);
             }
             KeyCode::Char('d') | KeyCode::Delete => {
                 if let Some(index) = self.menu_state.selected() {
                     self.task_collection.remove_list(index);
                 }
             }
+            // TODO: make this keys universal
             KeyCode::Char('q') => self.exit(),
             KeyCode::Char('w') => self.save(),
+            _ => {}
+        }
+    }
+
+    fn key_event_task_body(&mut self, key_event: KeyEvent) {
+        match key_event.code {
+            KeyCode::Char('k') | KeyCode::Down => self.task_state.select_next(),
+            KeyCode::Char('j') | KeyCode::Up => self.task_state.select_previous(),
+            KeyCode::Char('h') | KeyCode::Left | KeyCode::Esc => {
+                self.current_interface = CurrentInterface::TaskMenu
+            }
+            KeyCode::Char('a') => {
+                self.enter_write(WriteType::Task);
+            }
+
+            // // TODO: delete task
+            // KeyCode::Char('d') | KeyCode::Delete => {
+            //     if let Some(index) = self.task_state.selected() {
+            //         self.task_collection.remove_list(index);
+            //     }
+            // }
             _ => {}
         }
     }
@@ -198,8 +231,23 @@ impl App {
         // TODO: make input specified for each interface
         match key_event.code {
             KeyCode::Enter => {
-                self.task_collection
-                    .add_list(task::TaskList::new(self.write_input.final_input()));
+                match self.write_input.write_type {
+                    WriteType::Menu => self
+                        .task_collection
+                        .add_list(task::TaskList::new(self.write_input.final_input())),
+                    WriteType::Task => {
+                        let Some(index) = self.menu_state.selected() else {
+                            return;
+                        };
+
+                        let Some(mut task_list) = self.task_collection.get_list(index) else {
+                            return;
+                        };
+
+                        task_list.add_task(task::Task::new(self.write_input.final_input(), &None));
+                    }
+                    WriteType::TaskDescription => todo!(),
+                }
 
                 self.current_layout = self.previous_layout;
                 self.current_interface = self.previous_interface;
@@ -250,6 +298,7 @@ impl App {
         self.render_task_menu(task_menu_area[1], buf);
         self.render_task_body(task_body_area[1], buf);
 
+        // TODO: make a fixed and clearly defined standard position
         // input widget for task
         if self.current_interface == CurrentInterface::Write {
             let write_block = Block::bordered()

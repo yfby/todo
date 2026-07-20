@@ -17,7 +17,7 @@ pub struct TaskList {
 pub struct Task {
     completed: bool,
     task: String,
-    description: String,
+    description: Option<String>,
 }
 
 impl Default for TaskListCollection {
@@ -48,12 +48,8 @@ impl TaskListCollection {
             .collect()
     }
 
-    pub fn get_list(&self, index: usize) -> Option<&TaskList> {
-        self.task_lists.get(index)
-    }
-
-    pub fn get_list_mut(&mut self, name: &str) -> Option<&mut TaskList> {
-        self.task_lists.iter_mut().find(|l| l.name == name)
+    pub fn get_list(&mut self, index: usize) -> Option<&mut TaskList> {
+        self.task_lists.get_mut(index)
     }
 
     pub fn lists(&self) -> &[TaskList] {
@@ -91,11 +87,11 @@ impl TaskList {
 }
 
 impl Task {
-    pub fn new(task: &str, description: &str) -> Self {
+    pub fn new(task: &str, description: &Option<String>) -> Self {
         Task {
             completed: false,
             task: task.to_string(),
-            description: description.to_string(),
+            description: description.clone(),
         }
     }
 
@@ -111,8 +107,8 @@ impl Task {
         &self.task
     }
 
-    pub fn description(&self) -> &str {
-        &self.description
+    pub fn description(&self) -> Option<&str> {
+        self.description.as_deref()
     }
 }
 
