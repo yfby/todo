@@ -37,9 +37,12 @@ impl TaskListCollection {
         self.task_lists.push(list);
     }
 
+    // FIX: Remove by index dont use name
     pub fn remove_list(&mut self, name: &str) {
         self.task_lists.retain(|l| l.name != name);
     }
+
+    // TODO: get
 
     pub fn get_list(&self, name: &str) -> Option<&TaskList> {
         self.task_lists.iter().find(|l| l.name == name)

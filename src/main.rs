@@ -1,13 +1,13 @@
 use color_eyre::Result;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{
-    DefaultTerminal, Frame,
+    DefaultTerminal,
     buffer::Buffer,
-    layout::{Alignment, Constraint, Layout, Rect},
+    layout::{Alignment, Constraint, Layout, Position, Rect},
     style::{Color, Style},
-    widgets::{Block, List, ListItem, ListState, StatefulWidget, Widget},
+    widgets::{Block, List, ListState, Paragraph, StatefulWidget, Widget},
 };
-use std::{io, u8};
+use std::io;
 
 mod sample;
 mod task;
@@ -24,13 +24,18 @@ struct App {
     current_layout: CurrentLayout,
     current_interface: CurrentInterface,
     task_collection: task::TaskListCollection,
+    menu_state: ListState,
+    write_input: WriteInterface,
+    cursor_position: Option<Position>,
 }
 
+#[derive(Clone, Copy)]
 enum CurrentLayout {
     Task,
     Exit,
 }
 
+#[derive(PartialEq, Clone, Copy)]
 enum CurrentInterface {
     TaskMenu,
     TaskBody,
@@ -38,11 +43,62 @@ enum CurrentInterface {
     Exit,
 }
 
-struct Write {
-    item_index: u8,
+struct WriteInterface {
+    previous_layout: CurrentLayout,
+    previous_interface: CurrentInterface,
     input: String,
-    interface: CurrentInterface,
-    character_index: u8,
+    character_index: usize,
+}
+
+impl WriteInterface {
+    fn move_cursor_left(&mut self) {
+        let cursor_moved_left = self.character_index.saturating_sub(1);
+        self.character_index = self.clamp_cursor(cursor_moved_left);
+    }
+
+    fn move_cursor_right(&mut self) {
+        let cursor_moved_right = self.character_index.saturating_add(1);
+        self.character_index = self.clamp_cursor(cursor_moved_right);
+    }
+
+    fn enter_char(&mut self, new_char: char) {
+        let index = self.byte_index();
+        self.input.insert(index, new_char);
+        self.move_cursor_right();
+    }
+
+    fn byte_index(&self) -> usize {
+        self.input
+            .char_indices()
+            .map(|(i, _)| i)
+            .nth(self.character_index)
+            .unwrap_or(self.input.len())
+    }
+
+    fn delete_char(&mut self) {
+        if self.character_index != 0 {
+            let current_index = self.character_index;
+            let from_left_to_current_index = current_index - 1;
+
+            let before_char_to_delete = self.input.chars().take(from_left_to_current_index);
+            let after_char_to_delete = self.input.chars().skip(current_index);
+
+            self.input = before_char_to_delete.chain(after_char_to_delete).collect();
+            self.move_cursor_left();
+        }
+    }
+
+    fn clamp_cursor(&self, new_cursor_pos: usize) -> usize {
+        new_cursor_pos.clamp(0, self.input.chars().count())
+    }
+
+    const fn reset_cursor(&mut self) {
+        self.character_index = 0;
+    }
+
+    fn final_input(&self) -> &str {
+        &self.input
+    }
 }
 
 impl Default for App {
@@ -52,21 +108,34 @@ impl Default for App {
             current_layout: CurrentLayout::Task,
             current_interface: CurrentInterface::TaskMenu,
             task_collection: task::load_or_default(SAVE_FILE),
+            menu_state: ListState::default().with_selected(Some(0)),
+            write_input: WriteInterface {
+                previous_layout: CurrentLayout::Task,
+                previous_interface: CurrentInterface::TaskMenu,
+                input: String::new(),
+                character_index: 0,
+            },
+            cursor_position: None,
         }
     }
 }
 
+/// Root Logic
 impl App {
     fn run(mut self, terminal: &mut DefaultTerminal) -> Result<()> {
         while !self.exit {
-            terminal.draw(|frame| self.draw(frame))?;
+            terminal.draw(|frame| {
+                frame.render_widget(&mut self, frame.area());
+
+                // set cursor position for writing
+                if let Some(pos) = self.cursor_position {
+                    frame.set_cursor_position(pos);
+                }
+            })?;
+
             self.handle_events()?;
         }
         Ok(())
-    }
-
-    fn draw(&self, frame: &mut Frame) {
-        frame.render_widget(self, frame.area());
     }
 
     fn handle_events(&mut self) -> io::Result<()> {
@@ -86,18 +155,47 @@ impl App {
         match self.current_interface {
             CurrentInterface::TaskMenu => self.key_event_task_menu(key_event),
             CurrentInterface::TaskBody => todo!(),
-            CurrentInterface::Write => todo!(),
+            CurrentInterface::Write => self.key_event_write(key_event),
             CurrentInterface::Exit => todo!(),
         }
     }
 
     fn key_event_task_menu(&mut self, key_event: KeyEvent) {
         match key_event.code {
+            KeyCode::Char('k') | KeyCode::Down => self.menu_state.select_next(),
+            KeyCode::Char('j') | KeyCode::Up => self.menu_state.select_previous(),
+            KeyCode::Char('l') | KeyCode::Left | KeyCode::Enter => self.menu_state.select(None),
             KeyCode::Char('a') => {
-                todo!()
+                self.write_input.previous_layout = self.current_layout;
+                self.write_input.previous_interface = self.current_interface;
+                self.write_input.input = String::new();
+                self.write_input.reset_cursor();
+
+                self.current_interface = CurrentInterface::Write;
             }
             KeyCode::Char('q') => self.exit(),
             KeyCode::Char('w') => self.save(),
+            _ => {}
+        }
+    }
+
+    fn key_event_write(&mut self, key_event: KeyEvent) {
+        match key_event.code {
+            KeyCode::Enter => {
+                self.task_collection
+                    .add_list(task::TaskList::new(self.write_input.final_input()));
+
+                self.current_layout = self.write_input.previous_layout;
+                self.current_interface = self.write_input.previous_interface;
+            }
+            KeyCode::Char(to_insert) => self.write_input.enter_char(to_insert),
+            KeyCode::Backspace => self.write_input.delete_char(),
+            KeyCode::Left => self.write_input.move_cursor_left(),
+            KeyCode::Right => self.write_input.move_cursor_right(),
+            KeyCode::Esc => {
+                self.current_layout = self.write_input.previous_layout;
+                self.current_interface = self.write_input.previous_interface;
+            }
             _ => {}
         }
     }
@@ -114,46 +212,68 @@ impl App {
 }
 
 /// Rendering Logic
-impl Widget for &App {
+impl Widget for &mut App {
     fn render(self, area: Rect, buf: &mut Buffer) {
         match self.current_layout {
-            CurrentLayout::Task => self.render_list(area, buf),
+            CurrentLayout::Task => self.render_task_layout(area, buf),
             CurrentLayout::Exit => todo!(),
         }
     }
 }
 
 impl App {
-    fn render_list(&self, area: Rect, buf: &mut Buffer) {
+    fn render_task_layout(&mut self, area: Rect, buf: &mut Buffer) {
         let chunks = Layout::horizontal([Constraint::Percentage(20), Constraint::Percentage(80)])
             .split(area);
 
-        let list_menu_chunk = chunks[0];
-        let list_body_chunk = chunks[1];
+        let task_menu_area =
+            Layout::vertical([Constraint::Length(3), Constraint::Fill(1)]).split(chunks[0]);
 
-        let list_menu =
-            Layout::vertical([Constraint::Length(3), Constraint::Fill(1)]).split(list_menu_chunk);
-        let list_body =
-            Layout::vertical([Constraint::Length(3), Constraint::Fill(1)]).split(list_body_chunk);
+        self.render_task_menu(task_menu_area[1], buf);
 
-        let items: Vec<ListItem> = self
+        // input widget for task
+        if self.current_interface == CurrentInterface::Write {
+            let write_block = Block::bordered()
+                .title("Task Menu")
+                .title_alignment(Alignment::Center);
+
+            Paragraph::new(self.write_input.final_input())
+                .block(write_block)
+                .render(task_menu_area[0], buf);
+
+            self.cursor_position = Some(Position::new(
+                task_menu_area[0].x + self.write_input.character_index as u16 + 1,
+                task_menu_area[0].y + 1,
+            ));
+        } else {
+            self.cursor_position = None;
+        }
+    }
+
+    fn render_task_menu(&mut self, area: Rect, buf: &mut Buffer) {
+        let items: Vec<_> = self
             .task_collection
             .lists()
             .iter()
-            .map(|tl| ListItem::from(tl.name().to_string()))
+            .map(|item| item.name())
             .collect();
 
-        let list = List::new(items)
-            .block(
-                Block::bordered()
-                    .title("Task Menu")
-                    .title_alignment(Alignment::Center),
-            )
-            .highlight_style(Style::default().fg(Color::Black).bg(Color::Yellow))
-            .highlight_symbol(">> ");
+        let block = Block::bordered()
+            .title("Task Menu")
+            .title_alignment(Alignment::Left);
 
-        let mut list_state = ListState::default().with_selected(Some(0));
+        if items.is_empty() {
+            Paragraph::new("No Tasks Found")
+                .block(block)
+                .centered()
+                .render(area, buf);
+        } else {
+            let list = List::new(items)
+                .block(block)
+                .highlight_style(Style::default().fg(Color::Black).bg(Color::Yellow))
+                .highlight_symbol(">> ");
 
-        StatefulWidget::render(list, list_menu[1], buf, &mut list_state);
+            StatefulWidget::render(list, area, buf, &mut self.menu_state);
+        }
     }
 }
