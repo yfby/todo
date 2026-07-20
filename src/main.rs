@@ -48,6 +48,13 @@ enum CurrentInterface {
 struct WriteInterface {
     input: String,
     character_index: usize,
+    write_type: WriteType,
+}
+
+enum WriteType {
+    Menu,
+    Task,
+    TaskDescription,
 }
 
 impl WriteInterface {
@@ -115,6 +122,7 @@ impl Default for App {
             write_input: WriteInterface {
                 input: String::new(),
                 character_index: 0,
+                write_type: WriteType::Menu,
             },
             cursor_position: None,
         }
@@ -163,9 +171,10 @@ impl App {
 
     fn key_event_task_menu(&mut self, key_event: KeyEvent) {
         match key_event.code {
+            KeyCode::Esc => self.menu_state.select(None),
             KeyCode::Char('k') | KeyCode::Down => self.menu_state.select_next(),
             KeyCode::Char('j') | KeyCode::Up => self.menu_state.select_previous(),
-            KeyCode::Char('l') | KeyCode::Left | KeyCode::Enter => self.menu_state.select(None),
+            KeyCode::Char('l') | KeyCode::Left | KeyCode::Enter => todo!(),
             KeyCode::Char('a') => {
                 self.previous_layout = self.current_layout;
                 self.previous_interface = self.current_interface;
@@ -186,6 +195,7 @@ impl App {
     }
 
     fn key_event_write(&mut self, key_event: KeyEvent) {
+        // TODO: make input specified for each interface
         match key_event.code {
             KeyCode::Enter => {
                 self.task_collection
@@ -234,8 +244,11 @@ impl App {
 
         let task_menu_area =
             Layout::vertical([Constraint::Length(3), Constraint::Fill(1)]).split(chunks[0]);
+        let task_body_area =
+            Layout::vertical([Constraint::Length(3), Constraint::Fill(1)]).split(chunks[1]);
 
         self.render_task_menu(task_menu_area[1], buf);
+        self.render_task_body(task_body_area[1], buf);
 
         // input widget for task
         if self.current_interface == CurrentInterface::Write {
@@ -257,12 +270,7 @@ impl App {
     }
 
     fn render_task_menu(&mut self, area: Rect, buf: &mut Buffer) {
-        let items: Vec<_> = self
-            .task_collection
-            .lists()
-            .iter()
-            .map(|item| item.name())
-            .collect();
+        let items: Vec<_> = self.task_collection.get_lists_name();
 
         let block = Block::bordered()
             .title("Task Menu")
@@ -270,6 +278,44 @@ impl App {
 
         if items.is_empty() {
             Paragraph::new("No Tasks Found")
+                .block(block)
+                .centered()
+                .render(area, buf);
+        } else {
+            let list = List::new(items)
+                .block(block)
+                .highlight_style(Style::default().fg(Color::Black).bg(Color::Yellow))
+                .highlight_symbol(">> ");
+
+            StatefulWidget::render(list, area, buf, &mut self.menu_state);
+        }
+    }
+
+    fn render_task_body(&mut self, area: Rect, buf: &mut Buffer) {
+        let block = Block::bordered()
+            .title("Task Body")
+            .title_alignment(Alignment::Center);
+
+        let Some(index) = self.menu_state.selected() else {
+            Paragraph::new("No Task Selected")
+                .block(block)
+                .centered()
+                .render(area, buf);
+            return;
+        };
+
+        let Some(task_list) = self.task_collection.get_list(index) else {
+            Paragraph::new("No Tasks Available")
+                .block(block)
+                .centered()
+                .render(area, buf);
+            return;
+        };
+
+        let items: Vec<_> = task_list.get_tasks();
+
+        if items.is_empty() {
+            Paragraph::new("No Tasks Available")
                 .block(block)
                 .centered()
                 .render(area, buf);

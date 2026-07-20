@@ -41,6 +41,13 @@ impl TaskListCollection {
         self.task_lists.remove(index);
     }
 
+    pub fn get_lists_name(&self) -> Vec<String> {
+        self.task_lists
+            .iter()
+            .map(|tl| tl.name().to_string())
+            .collect()
+    }
+
     pub fn get_list(&self, index: usize) -> Option<&TaskList> {
         self.task_lists.get(index)
     }
@@ -64,6 +71,10 @@ impl TaskList {
 
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    pub fn get_tasks(&self) -> Vec<String> {
+        self.tasks.iter().map(|t| t.task().to_string()).collect()
     }
 
     pub fn add_task(&mut self, task: Task) {
