@@ -159,6 +159,13 @@ impl App {
         Ok(())
     }
 
+    fn selected_task(&mut self) -> Option<&mut task::Task> {
+        let index = self.menu_state.selected()?;
+        let list = self.task_collection.get_list(index)?;
+        let task_index = self.task_state.selected()?;
+        list.get_task(task_index)
+    }
+
     fn enter_write(&mut self, write_type: WriteType) {
         self.previous_layout = self.current_layout;
         self.previous_interface = self.current_interface;
@@ -184,8 +191,14 @@ impl App {
     fn key_event_task_menu(&mut self, key_event: KeyEvent) {
         match key_event.code {
             KeyCode::Esc => self.menu_state.select(None),
-            KeyCode::Char('k') | KeyCode::Down => self.menu_state.select_next(),
-            KeyCode::Char('j') | KeyCode::Up => self.menu_state.select_previous(),
+            KeyCode::Char('k') | KeyCode::Down => {
+                self.menu_state.select_next();
+                self.task_state.select(None);
+            }
+            KeyCode::Char('j') | KeyCode::Up => {
+                self.menu_state.select_previous();
+                self.task_state.select(None);
+            }
             KeyCode::Char('l') | KeyCode::Right | KeyCode::Enter => {
                 self.current_interface = CurrentInterface::TaskBody;
                 if self.task_state.selected().is_none() {
@@ -198,6 +211,13 @@ impl App {
             KeyCode::Char('d') | KeyCode::Delete => {
                 if let Some(index) = self.menu_state.selected() {
                     self.task_collection.remove_list(index);
+                    self.task_state.select(None);
+                    if self.task_collection.lists().is_empty() {
+                        self.menu_state.select(None);
+                    } else if index >= self.task_collection.lists().len() {
+                        self.menu_state
+                            .select(Some(self.task_collection.lists().len() - 1));
+                    }
                 }
             }
             // TODO: make this keys universal
@@ -217,10 +237,31 @@ impl App {
             KeyCode::Char('a') => {
                 self.enter_write(WriteType::Task);
             }
-
+            KeyCode::Char(' ') => {
+                if let Some(task) = self.selected_task() {
+                    task.toggle();
+                }
+            }
+            KeyCode::Char('d') => {
+                let Some(task_index) = self.task_state.selected() else {
+                    return;
+                };
+                let Some(task_list) = self
+                    .menu_state
+                    .selected()
+                    .and_then(|index| self.task_collection.get_list(index))
+                else {
+                    return;
+                };
+                task_list.remove_task(task_index);
+                if task_list.tasks().is_empty() {
+                    self.task_state.select(None);
+                } else if task_index >= task_list.tasks().len() {
+                    self.task_state.select(Some(task_list.tasks().len() - 1));
+                }
+            }
             // TODO: rename task
             // TODO: task description
-            // // TODO: delete task
             // KeyCode::Char('d') | KeyCode::Delete => {
             //     if let Some(index) = self.task_state.selected() {
             //         self.task_collection.remove_list(index);
@@ -238,11 +279,11 @@ impl App {
                         .task_collection
                         .add_list(task::TaskList::new(self.write_input.final_input())),
                     WriteType::Task => {
-                        let Some(index) = self.menu_state.selected() else {
-                            return;
-                        };
-
-                        let Some(task_list) = self.task_collection.get_list(index) else {
+                        let Some(task_list) = self
+                            .menu_state
+                            .selected()
+                            .and_then(|index| self.task_collection.get_list(index))
+                        else {
                             return;
                         };
 

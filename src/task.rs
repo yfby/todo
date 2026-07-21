@@ -69,8 +69,8 @@ impl TaskList {
         &self.name
     }
 
-    pub fn get_tasks(&self) -> Vec<String> {
-        self.tasks.iter().map(|t| t.task().to_string()).collect()
+    pub fn get_task(&mut self, index: usize) -> Option<&mut Task> {
+        self.tasks.get_mut(index)
     }
 
     pub fn add_task(&mut self, task: Task) {
