@@ -9,7 +9,6 @@ use ratatui::{
 };
 use std::io;
 
-mod sample;
 mod task;
 
 const SAVE_FILE: &str = "tasks.json";
@@ -55,7 +54,7 @@ struct WriteInterface {
 enum WriteType {
     Menu,
     Task,
-    TaskDescription, //TODO: THIS
+    TaskDescription,
 }
 
 impl WriteInterface {
@@ -101,7 +100,6 @@ impl WriteInterface {
     }
 
     fn reset_cursor(&mut self) {
-        self.input.clear();
         self.character_index = 0;
     }
 
@@ -179,26 +177,28 @@ impl App {
     }
 
     fn key_event_task_menu(&mut self, key_event: KeyEvent) {
-        match key_event.code {
-            KeyCode::Esc => self.menu_state.select(None),
-            KeyCode::Char('k') | KeyCode::Down => {
+        match (key_event.code, key_event.modifiers) {
+            (KeyCode::Esc, KeyModifiers::NONE) => self.menu_state.select(None),
+            (KeyCode::Char('k'), KeyModifiers::NONE) | (KeyCode::Down, KeyModifiers::NONE) => {
                 self.menu_state.select_next();
                 self.task_state.select(None);
             }
-            KeyCode::Char('j') | KeyCode::Up => {
+            (KeyCode::Char('j'), KeyModifiers::NONE) | (KeyCode::Up, KeyModifiers::NONE) => {
                 self.menu_state.select_previous();
                 self.task_state.select(None);
             }
-            KeyCode::Char('l') | KeyCode::Right | KeyCode::Enter => {
+            (KeyCode::Char('l'), KeyModifiers::NONE)
+            | (KeyCode::Right, KeyModifiers::NONE)
+            | (KeyCode::Enter, KeyModifiers::NONE) => {
                 self.current_interface = CurrentInterface::TaskBody;
                 if self.task_state.selected().is_none() {
                     self.task_state.select(Some(0));
                 }
             }
-            KeyCode::Char('a') => {
-                self.enter_write(WriteType::Menu);
+            (KeyCode::Char('a'), KeyModifiers::NONE) | (KeyCode::Char('i'), KeyModifiers::NONE) => {
+                self.enter_write(WriteType::Menu, None);
             }
-            KeyCode::Char('d') | KeyCode::Delete => {
+            (KeyCode::Char('d'), KeyModifiers::NONE) | (KeyCode::Delete, KeyModifiers::NONE) => {
                 if let Some(index) = self.menu_state.selected() {
                     self.task_collection.remove_list(index);
                     self.task_state.select(None);
@@ -210,29 +210,42 @@ impl App {
                     }
                 }
             }
-            // TODO: make this keys universal
-            KeyCode::Char('q') => self.exit(),
-            KeyCode::Char('w') => self.save(),
+
+            // TODO: make universal
+            (KeyCode::Char('q'), KeyModifiers::NONE) => self.exit(),
+            (KeyCode::Char('w'), KeyModifiers::NONE) => self.save(),
             _ => {}
         }
     }
 
     fn key_event_task_body(&mut self, key_event: KeyEvent) {
-        match key_event.code {
-            KeyCode::Char('k') | KeyCode::Down => self.task_state.select_next(),
-            KeyCode::Char('j') | KeyCode::Up => self.task_state.select_previous(),
-            KeyCode::Char('h') | KeyCode::Left | KeyCode::Esc => {
+        match (key_event.code, key_event.modifiers) {
+            (KeyCode::Char('h'), KeyModifiers::NONE)
+            | (KeyCode::Left, KeyModifiers::NONE)
+            | (KeyCode::Esc, KeyModifiers::NONE) => {
                 self.current_interface = CurrentInterface::TaskMenu
             }
-            KeyCode::Char('a') => {
-                self.enter_write(WriteType::Task);
+            (KeyCode::Char('k'), KeyModifiers::NONE) | (KeyCode::Down, KeyModifiers::NONE) => {
+                self.task_state.select_next()
             }
-            KeyCode::Char(' ') => {
-                if let Some(task) = self.selected_task() {
-                    task.toggle();
+            (KeyCode::Char('j'), KeyModifiers::NONE) | (KeyCode::Up, KeyModifiers::NONE) => {
+                self.task_state.select_previous()
+            }
+            (KeyCode::Char('a'), KeyModifiers::NONE) | (KeyCode::Char('i'), KeyModifiers::NONE) => {
+                self.enter_write(WriteType::Task, None);
+            }
+            (KeyCode::Char('A'), KeyModifiers::SHIFT)
+            | (KeyCode::Char('I'), KeyModifiers::SHIFT) => {
+                if let Some(task_description) = self.selected_task()
+                    && let Some(desc) = task_description.description()
+                {
+                    let desc_string = desc.to_string();
+                    self.enter_write(WriteType::TaskDescription, Some(&desc_string));
+                } else {
+                    self.enter_write(WriteType::TaskDescription, None);
                 }
             }
-            KeyCode::Char('d') => {
+            (KeyCode::Char('d'), KeyModifiers::NONE) => {
                 let Some(task_index) = self.task_state.selected() else {
                     return;
                 };
@@ -250,20 +263,18 @@ impl App {
                     self.task_state.select(Some(task_list.tasks().len() - 1));
                 }
             }
-            // TODO: rename task
-            // TODO: task description
-            // KeyCode::Char('d') | KeyCode::Delete => {
-            //     if let Some(index) = self.task_state.selected() {
-            //         self.task_collection.remove_list(index);
-            //     }
-            // }
+            (KeyCode::Char(' '), KeyModifiers::NONE) | (KeyCode::Enter, KeyModifiers::NONE) => {
+                if let Some(task) = self.selected_task() {
+                    task.toggle();
+                }
+            }
             _ => {}
         }
     }
 
     fn key_event_write(&mut self, key_event: KeyEvent) {
-        match key_event.code {
-            KeyCode::Enter => {
+        match (key_event.code, key_event.modifiers) {
+            (KeyCode::Enter, KeyModifiers::NONE) => {
                 match self.write_input.write_type {
                     WriteType::Menu => self
                         .task_collection
@@ -279,17 +290,72 @@ impl App {
 
                         task_list.add_task(task::Task::new(self.write_input.final_input(), &None));
                     }
-                    WriteType::TaskDescription => todo!(),
+                    WriteType::TaskDescription => {
+                        let new_desc = self.write_input.final_input().to_string();
+                        if new_desc.is_empty() {
+                            self.selected_task().unwrap().change_description(&None);
+                        } else {
+                            self.selected_task()
+                                .unwrap()
+                                .change_description(&Some(new_desc));
+                        }
+                    }
                 }
 
                 self.current_layout = self.previous_layout;
                 self.current_interface = self.previous_interface;
             }
-            KeyCode::Char(to_insert) => self.write_input.enter_char(to_insert),
-            KeyCode::Backspace => self.write_input.delete_char(),
-            KeyCode::Left => self.write_input.move_cursor_left(),
-            KeyCode::Right => self.write_input.move_cursor_right(),
-            KeyCode::Esc => {
+            (KeyCode::Char(to_insert), KeyModifiers::NONE | KeyModifiers::SHIFT) => {
+                self.write_input.enter_char(to_insert)
+            }
+            (KeyCode::Backspace, KeyModifiers::NONE) => self.write_input.delete_char(),
+            (KeyCode::Left, KeyModifiers::NONE) => self.write_input.move_cursor_left(),
+            (KeyCode::Right, KeyModifiers::NONE) => self.write_input.move_cursor_right(),
+            (KeyCode::Char('a'), KeyModifiers::CONTROL) => self.write_input.character_index = 0,
+            (KeyCode::Char('e'), KeyModifiers::CONTROL) => {
+                self.write_input.character_index = self.write_input.input.chars().count();
+            }
+            (KeyCode::Char('w'), KeyModifiers::CONTROL) => {
+                let idx = self.write_input.character_index;
+                if idx > 0 {
+                    let chars: Vec<char> = self.write_input.input.chars().collect();
+                    let mut new_chars = chars[..idx - 1].to_vec();
+                    let after = &chars[idx..];
+                    // skip trailing whitespace, then skip one word
+                    let mut skip = 0;
+                    for c in after.iter() {
+                        if *c == ' ' {
+                            skip += 1;
+                        } else {
+                            break;
+                        }
+                    }
+                    // skip the word after spaces
+                    let mut word_skipped = false;
+                    for c in after[skip..].iter() {
+                        if *c == ' ' && word_skipped {
+                            break;
+                        }
+                        skip += 1;
+                        word_skipped = true;
+                    }
+                    new_chars.extend_from_slice(&after[skip..]);
+                    self.write_input.input = new_chars.into_iter().collect();
+                    self.write_input.character_index = idx - 1 - skip;
+                }
+            }
+            (KeyCode::Char('u'), KeyModifiers::CONTROL) => {
+                self.write_input
+                    .input
+                    .truncate(self.write_input.byte_index());
+                self.write_input.character_index = 0;
+            }
+            (KeyCode::Char('k'), KeyModifiers::CONTROL) => {
+                let idx = self.write_input.character_index;
+                let chars: Vec<char> = self.write_input.input.chars().collect();
+                self.write_input.input = chars[..idx].iter().collect();
+            }
+            (KeyCode::Esc, KeyModifiers::NONE) => {
                 self.current_layout = self.previous_layout;
                 self.current_interface = self.previous_interface;
             }
@@ -465,12 +531,15 @@ impl App {
             self.cursor_position = None;
         }
     }
-
-    fn enter_write(&mut self, write_type: WriteType) {
+    fn enter_write(&mut self, write_type: WriteType, set_input: Option<&String>) {
         self.previous_layout = self.current_layout;
         self.previous_interface = self.current_interface;
-        self.write_input.input = String::new();
         self.write_input.reset_cursor();
+        if let Some(input) = set_input {
+            self.write_input.input = input.clone();
+        } else {
+            self.write_input.input = String::new();
+        }
         self.write_input.write_type = write_type;
 
         self.current_interface = CurrentInterface::Write;

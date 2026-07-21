@@ -2,11 +2,10 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Default)]
 pub struct TaskListCollection {
     task_lists: Vec<TaskList>,
 }
-
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TaskList {
     name: String,
@@ -18,14 +17,6 @@ pub struct Task {
     completed: bool,
     task: String,
     description: Option<String>,
-}
-
-impl Default for TaskListCollection {
-    fn default() -> Self {
-        TaskListCollection {
-            task_lists: Vec::new(),
-        }
-    }
 }
 
 impl TaskListCollection {
@@ -109,6 +100,10 @@ impl Task {
 
     pub fn description(&self) -> Option<&str> {
         self.description.as_deref()
+    }
+
+    pub fn change_description(&mut self, description: &Option<String>) {
+        self.description = description.clone();
     }
 }
 
