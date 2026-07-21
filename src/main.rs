@@ -339,13 +339,20 @@ impl App {
             block = block.border_style(Style::new().light_blue());
         }
 
-        if let Some(items) = self
+        if let Some(tasks) = self
             .menu_state
             .selected()
             .and_then(|index| self.task_collection.get_list(index))
-            .map(|list| list.get_tasks())
+            .map(|list| list.tasks())
             .filter(|items| !items.is_empty())
         {
+            let items = tasks.iter().map(|t| {
+                if t.is_completed() {
+                    format!("✓ {}", t.task())
+                } else {
+                    format!("☐ {}", t.task())
+                }
+            });
             let list = List::new(items).block(block).highlight_style(
                 Style::default()
                     .fg(Color::LightYellow)
