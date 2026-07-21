@@ -1,9 +1,9 @@
 use color_eyre::Result;
-use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
+use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::{
     DefaultTerminal,
     buffer::Buffer,
-    layout::{Alignment, Constraint, Layout, Position, Rect},
+    layout::{Alignment, Constraint, Layout, Position, Rect, Size},
     style::{Color, Modifier, Style},
     widgets::{Block, Clear, List, ListState, Paragraph, StatefulWidget, Widget},
 };
@@ -164,16 +164,6 @@ impl App {
         let list = self.task_collection.get_list(index)?;
         let task_index = self.task_state.selected()?;
         list.get_task(task_index)
-    }
-
-    fn enter_write(&mut self, write_type: WriteType) {
-        self.previous_layout = self.current_layout;
-        self.previous_interface = self.current_interface;
-        self.write_input.input = String::new();
-        self.write_input.reset_cursor();
-        self.write_input.write_type = write_type;
-
-        self.current_interface = CurrentInterface::Write;
     }
 }
 
@@ -400,6 +390,26 @@ impl App {
                     .add_modifier(Modifier::BOLD),
             );
             StatefulWidget::render(list, area, buf, &mut self.task_state);
+
+            let selected_idx = self.task_state.selected().unwrap_or(0) as u16;
+
+            if let Some(task_description) = self.selected_task()
+                && task_description.description().is_some()
+            {
+                let description_block = Block::bordered()
+                    .border_style(Style::new().light_green())
+                    .title("Description")
+                    .title_alignment(Alignment::Center);
+                let mut descripton_area = area.resize(Size::new(50, 10));
+
+                descripton_area.x += 1;
+                descripton_area.y = descripton_area.y + 2 + selected_idx;
+
+                Clear.render(descripton_area, buf);
+                Paragraph::new(task_description.description().unwrap_or(""))
+                    .block(description_block)
+                    .render(descripton_area, buf);
+            }
         } else {
             let msg_area = area.centered(Constraint::Length(40), Constraint::Length(1));
             let msg = if self.menu_state.selected().is_none() {
@@ -454,5 +464,15 @@ impl App {
         } else {
             self.cursor_position = None;
         }
+    }
+
+    fn enter_write(&mut self, write_type: WriteType) {
+        self.previous_layout = self.current_layout;
+        self.previous_interface = self.current_interface;
+        self.write_input.input = String::new();
+        self.write_input.reset_cursor();
+        self.write_input.write_type = write_type;
+
+        self.current_interface = CurrentInterface::Write;
     }
 }
