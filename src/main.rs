@@ -4,12 +4,10 @@ use ratatui::{
     DefaultTerminal,
     buffer::Buffer,
     layout::{Alignment, Constraint, Layout, Position, Rect},
-    style::{Color, Style},
-    widgets::{Block, List, ListState, Paragraph, StatefulWidget, Widget},
+    style::{Color, Modifier, Style},
+    widgets::{Block, Clear, List, ListState, Paragraph, StatefulWidget, Widget},
 };
 use std::io;
-
-use crate::CurrentInterface::TaskBody;
 
 mod sample;
 mod task;
@@ -45,7 +43,7 @@ enum CurrentInterface {
     TaskMenu,
     TaskBody,
     Write,
-    Exit,
+    Exit, // TODO: confirm exit
 }
 
 struct WriteInterface {
@@ -57,7 +55,7 @@ struct WriteInterface {
 enum WriteType {
     Menu,
     Task,
-    TaskDescription,
+    TaskDescription, //TODO: THIS
 }
 
 impl WriteInterface {
@@ -122,7 +120,7 @@ impl Default for App {
             previous_interface: CurrentInterface::TaskMenu,
             task_collection: task::load_or_default(SAVE_FILE),
             menu_state: ListState::default().with_selected(Some(0)),
-            task_state: ListState::default().with_selected(Some(0)),
+            task_state: ListState::default().with_selected(None),
             write_input: WriteInterface {
                 input: String::new(),
                 character_index: 0,
@@ -189,7 +187,10 @@ impl App {
             KeyCode::Char('k') | KeyCode::Down => self.menu_state.select_next(),
             KeyCode::Char('j') | KeyCode::Up => self.menu_state.select_previous(),
             KeyCode::Char('l') | KeyCode::Right | KeyCode::Enter => {
-                self.current_interface = CurrentInterface::TaskBody
+                self.current_interface = CurrentInterface::TaskBody;
+                if self.task_state.selected().is_none() {
+                    self.task_state.select(Some(0));
+                }
             }
             KeyCode::Char('a') => {
                 self.enter_write(WriteType::Menu);
@@ -217,6 +218,8 @@ impl App {
                 self.enter_write(WriteType::Task);
             }
 
+            // TODO: rename task
+            // TODO: task description
             // // TODO: delete task
             // KeyCode::Char('d') | KeyCode::Delete => {
             //     if let Some(index) = self.task_state.selected() {
@@ -228,7 +231,6 @@ impl App {
     }
 
     fn key_event_write(&mut self, key_event: KeyEvent) {
-        // TODO: make input specified for each interface
         match key_event.code {
             KeyCode::Enter => {
                 match self.write_input.write_type {
@@ -240,7 +242,7 @@ impl App {
                             return;
                         };
 
-                        let Some(mut task_list) = self.task_collection.get_list(index) else {
+                        let Some(task_list) = self.task_collection.get_list(index) else {
                             return;
                         };
 
@@ -287,43 +289,30 @@ impl Widget for &mut App {
 
 impl App {
     fn render_task_layout(&mut self, area: Rect, buf: &mut Buffer) {
-        let chunks = Layout::horizontal([Constraint::Percentage(20), Constraint::Percentage(80)])
-            .split(area);
+        let chunks = Layout::horizontal([Constraint::Length(20), Constraint::Fill(1)]).split(area);
 
-        let task_menu_area =
-            Layout::vertical([Constraint::Length(3), Constraint::Fill(1)]).split(chunks[0]);
-        let task_body_area =
-            Layout::vertical([Constraint::Length(3), Constraint::Fill(1)]).split(chunks[1]);
+        let task_menu_area = chunks[0];
+        let task_body_area = chunks[1];
+        // if self.current_interface == CurrentInterface::Write {
+        // }
+        // Layout::vertical([Constraint::Length(3), Constraint::Fill(1)]).split(chunks[1]);
 
-        self.render_task_menu(task_menu_area[1], buf);
-        self.render_task_body(task_body_area[1], buf);
+        self.render_task_menu(task_menu_area, buf);
+        self.render_task_body(task_body_area, buf);
 
-        // TODO: make a fixed and clearly defined standard position
-        // input widget for task
-        if self.current_interface == CurrentInterface::Write {
-            let write_block = Block::bordered()
-                .title("Task Menu")
-                .title_alignment(Alignment::Center);
-
-            Paragraph::new(self.write_input.final_input())
-                .block(write_block)
-                .render(task_menu_area[0], buf);
-
-            self.cursor_position = Some(Position::new(
-                task_menu_area[0].x + self.write_input.character_index as u16 + 1,
-                task_menu_area[0].y + 1,
-            ));
-        } else {
-            self.cursor_position = None;
-        }
+        self.write_widget(area, buf);
     }
 
     fn render_task_menu(&mut self, area: Rect, buf: &mut Buffer) {
         let items: Vec<_> = self.task_collection.get_lists_name();
 
-        let block = Block::bordered()
+        let mut block = Block::bordered()
             .title("Task Menu")
             .title_alignment(Alignment::Left);
+
+        if self.current_interface == CurrentInterface::TaskMenu {
+            block = block.border_style(Style::new().light_blue());
+        }
 
         if items.is_empty() {
             Paragraph::new("No Tasks Found")
@@ -331,50 +320,91 @@ impl App {
                 .centered()
                 .render(area, buf);
         } else {
-            let list = List::new(items)
-                .block(block)
-                .highlight_style(Style::default().fg(Color::Black).bg(Color::Yellow))
-                .highlight_symbol(">> ");
+            let list = List::new(items).block(block).highlight_style(
+                Style::default()
+                    .fg(Color::LightYellow)
+                    .add_modifier(Modifier::BOLD),
+            );
 
             StatefulWidget::render(list, area, buf, &mut self.menu_state);
         }
     }
 
     fn render_task_body(&mut self, area: Rect, buf: &mut Buffer) {
-        let block = Block::bordered()
-            .title("Task Body")
+        let mut block = Block::bordered()
+            .title("Tasks")
             .title_alignment(Alignment::Center);
 
-        let Some(index) = self.menu_state.selected() else {
-            Paragraph::new("No Task Selected")
-                .block(block)
-                .centered()
-                .render(area, buf);
-            return;
-        };
+        if self.current_interface == CurrentInterface::TaskBody {
+            block = block.border_style(Style::new().light_blue());
+        }
 
-        let Some(task_list) = self.task_collection.get_list(index) else {
-            Paragraph::new("No Tasks Available")
-                .block(block)
-                .centered()
-                .render(area, buf);
-            return;
-        };
-
-        let items: Vec<_> = task_list.get_tasks();
-
-        if items.is_empty() {
-            Paragraph::new("No Tasks Available")
-                .block(block)
-                .centered()
-                .render(area, buf);
+        if let Some(items) = self
+            .menu_state
+            .selected()
+            .and_then(|index| self.task_collection.get_list(index))
+            .map(|list| list.get_tasks())
+            .filter(|items| !items.is_empty())
+        {
+            let list = List::new(items).block(block).highlight_style(
+                Style::default()
+                    .fg(Color::LightYellow)
+                    .add_modifier(Modifier::BOLD),
+            );
+            StatefulWidget::render(list, area, buf, &mut self.task_state);
         } else {
-            let list = List::new(items)
-                .block(block)
-                .highlight_style(Style::default().fg(Color::Black).bg(Color::Yellow))
-                .highlight_symbol(">> ");
+            let msg_area = area.centered(Constraint::Length(40), Constraint::Length(1));
+            let msg = if self.menu_state.selected().is_none() {
+                "No Task Selected"
+            } else {
+                "No Tasks Available"
+            };
 
-            StatefulWidget::render(list, area, buf, &mut self.menu_state);
+            if self.menu_state.selected().is_some() {
+                block.render(area, buf);
+            }
+
+            Paragraph::new(msg).centered().render(msg_area, buf);
+        }
+    }
+
+    fn write_widget(&mut self, area: Rect, buf: &mut Buffer) {
+        let write_area = area.centered(Constraint::Length(30), Constraint::Length(3));
+
+        if self.current_interface == CurrentInterface::Write {
+            Clear.render(write_area, buf);
+
+            let mut write_block = Block::bordered();
+
+            if self.current_interface == CurrentInterface::Write {
+                write_block = write_block.border_style(Style::new().light_blue());
+            }
+
+            match self.write_input.write_type {
+                WriteType::Menu => {
+                    write_block = write_block.title("Menu").title_alignment(Alignment::Center);
+                }
+                WriteType::Task => {
+                    write_block = write_block.title("Task").title_alignment(Alignment::Center);
+                }
+                WriteType::TaskDescription => {
+                    write_block = write_block
+                        .title("Description")
+                        .title_alignment(Alignment::Center);
+                }
+            }
+
+            Paragraph::new(self.write_input.final_input())
+                .block(write_block)
+                .render(write_area, buf);
+
+            // cursor positioning
+            self.cursor_position = Some(Position::new(
+                write_area.x + self.write_input.character_index as u16 + 1,
+                write_area.y + 1,
+            ));
+        } else {
+            self.cursor_position = None;
         }
     }
 }
