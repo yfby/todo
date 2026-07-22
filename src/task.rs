@@ -46,6 +46,10 @@ impl TaskListCollection {
     pub fn lists(&self) -> &[TaskList] {
         &self.task_lists
     }
+
+    pub fn lists_mut(&mut self) -> &mut [TaskList] {
+        &mut self.task_lists
+    }
 }
 
 impl TaskList {
@@ -74,6 +78,10 @@ impl TaskList {
 
     pub fn tasks(&self) -> &[Task] {
         &self.tasks
+    }
+
+    pub fn tasks_mut(&mut self) -> &mut [Task] {
+        &mut self.tasks
     }
 }
 

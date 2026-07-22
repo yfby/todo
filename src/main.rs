@@ -1,5 +1,9 @@
 use color_eyre::Result;
-use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use crossterm::event::{
+    self, Event,
+    KeyCode::{self, Menu},
+    KeyEvent, KeyEventKind, KeyModifiers,
+};
 use ratatui::{
     DefaultTerminal,
     buffer::Buffer,
@@ -178,6 +182,7 @@ impl App {
 
     fn key_event_task_menu(&mut self, key_event: KeyEvent) {
         match (key_event.code, key_event.modifiers) {
+            // navigation
             (KeyCode::Esc, KeyModifiers::NONE) => self.menu_state.select(None),
             (KeyCode::Char('k'), KeyModifiers::NONE) | (KeyCode::Down, KeyModifiers::NONE) => {
                 self.menu_state.select_next();
@@ -195,6 +200,8 @@ impl App {
                     self.task_state.select(Some(0));
                 }
             }
+
+            // action
             (KeyCode::Char('a'), KeyModifiers::NONE) | (KeyCode::Char('i'), KeyModifiers::NONE) => {
                 self.enter_write(WriteType::Menu, None);
             }
@@ -211,6 +218,28 @@ impl App {
                 }
             }
 
+            // special
+            (KeyCode::Char('K'), KeyModifiers::SHIFT) | (KeyCode::Down, KeyModifiers::SHIFT) => {
+                if let Some(task_index) = self.menu_state.selected()
+                    && (task_index + 1) < self.task_collection.lists().len()
+                {
+                    self.task_collection
+                        .lists_mut()
+                        .swap(task_index, task_index + 1);
+                    self.menu_state.select_next();
+                }
+            }
+            (KeyCode::Char('J'), KeyModifiers::SHIFT) | (KeyCode::Up, KeyModifiers::SHIFT) => {
+                if let Some(task_index) = self.menu_state.selected()
+                    && task_index > 0
+                {
+                    self.task_collection
+                        .lists_mut()
+                        .swap(task_index, task_index - 1);
+                    self.menu_state.select_previous();
+                }
+            }
+
             // TODO: make universal
             (KeyCode::Char('q'), KeyModifiers::NONE) => self.exit(),
             (KeyCode::Char('w'), KeyModifiers::NONE) => self.save(),
@@ -220,6 +249,7 @@ impl App {
 
     fn key_event_task_body(&mut self, key_event: KeyEvent) {
         match (key_event.code, key_event.modifiers) {
+            // navigation
             (KeyCode::Char('h'), KeyModifiers::NONE)
             | (KeyCode::Left, KeyModifiers::NONE)
             | (KeyCode::Esc, KeyModifiers::NONE) => {
@@ -231,19 +261,10 @@ impl App {
             (KeyCode::Char('j'), KeyModifiers::NONE) | (KeyCode::Up, KeyModifiers::NONE) => {
                 self.task_state.select_previous()
             }
+
+            // action
             (KeyCode::Char('a'), KeyModifiers::NONE) | (KeyCode::Char('i'), KeyModifiers::NONE) => {
                 self.enter_write(WriteType::Task, None);
-            }
-            (KeyCode::Char('A'), KeyModifiers::SHIFT)
-            | (KeyCode::Char('I'), KeyModifiers::SHIFT) => {
-                if let Some(task_description) = self.selected_task()
-                    && let Some(desc) = task_description.description()
-                {
-                    let desc_string = desc.to_string();
-                    self.enter_write(WriteType::TaskDescription, Some(&desc_string));
-                } else {
-                    self.enter_write(WriteType::TaskDescription, None);
-                }
             }
             (KeyCode::Char('d'), KeyModifiers::NONE) => {
                 let Some(task_index) = self.task_state.selected() else {
@@ -266,6 +287,53 @@ impl App {
             (KeyCode::Char(' '), KeyModifiers::NONE) | (KeyCode::Enter, KeyModifiers::NONE) => {
                 if let Some(task) = self.selected_task() {
                     task.toggle();
+                }
+            }
+
+            // special actial
+            (KeyCode::Char('K'), KeyModifiers::SHIFT) | (KeyCode::Down, KeyModifiers::SHIFT) => {
+                let Some(task_index) = self.task_state.selected() else {
+                    return;
+                };
+                let Some(task_list) = self
+                    .menu_state
+                    .selected()
+                    .and_then(|index| self.task_collection.get_list(index))
+                else {
+                    return;
+                };
+
+                if (task_index + 1) < task_list.tasks().len() {
+                    task_list.tasks_mut().swap(task_index, task_index + 1);
+                    self.task_state.select_next()
+                }
+            }
+            (KeyCode::Char('J'), KeyModifiers::SHIFT) | (KeyCode::Up, KeyModifiers::SHIFT) => {
+                let Some(task_index) = self.task_state.selected() else {
+                    return;
+                };
+                let Some(task_list) = self
+                    .menu_state
+                    .selected()
+                    .and_then(|index| self.task_collection.get_list(index))
+                else {
+                    return;
+                };
+
+                if task_index > 0 {
+                    task_list.tasks_mut().swap(task_index, task_index - 1);
+                    self.task_state.select_previous()
+                }
+            }
+            (KeyCode::Char('A'), KeyModifiers::SHIFT)
+            | (KeyCode::Char('I'), KeyModifiers::SHIFT) => {
+                if let Some(task_description) = self.selected_task()
+                    && let Some(desc) = task_description.description()
+                {
+                    let desc_string = desc.to_string();
+                    self.enter_write(WriteType::TaskDescription, Some(&desc_string));
+                } else {
+                    self.enter_write(WriteType::TaskDescription, None);
                 }
             }
             _ => {}
