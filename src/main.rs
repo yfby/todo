@@ -469,7 +469,7 @@ impl App {
     }
 
     fn render_task_menu(&mut self, area: Rect, buf: &mut Buffer) {
-        let items: Vec<_> = self.task_collection.get_lists_name();
+        let items: Vec<_> = self.task_collection.get_list_names();
 
         let mut block = Block::bordered()
             .title("Task Menu")

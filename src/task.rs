@@ -32,7 +32,7 @@ impl TaskListCollection {
         self.task_lists.remove(index);
     }
 
-    pub fn get_lists_name(&self) -> Vec<String> {
+    pub fn get_list_names(&self) -> Vec<String> {
         self.task_lists
             .iter()
             .map(|tl| tl.name().to_string())
