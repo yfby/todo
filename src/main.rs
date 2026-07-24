@@ -8,8 +8,8 @@ use ratatui::{
     DefaultTerminal,
     buffer::Buffer,
     layout::{Alignment, Constraint, Layout, Position, Rect, Size},
-    style::{Color, Modifier, Style},
-    widgets::{Block, Clear, List, ListState, Paragraph, StatefulWidget, Widget},
+    style::{Color, Modifier, Style, Stylize},
+    widgets::{Block, Clear, List, ListItem, ListState, Paragraph, StatefulWidget, Widget},
 };
 use std::io;
 
@@ -511,20 +511,28 @@ impl App {
             .map(|list| list.tasks())
             .filter(|items| !items.is_empty())
         {
-            let items = tasks.iter().map(|t| {
-                if t.is_completed() {
-                    format!("✓ {}", t.task())
+            let mut list_items: Vec<ListItem> = vec![];
+            for item in tasks {
+                if item.is_completed() {
+                    list_items.push(
+                        ListItem::new(
+                            format!("☑ {}", item.task()).add_modifier(Modifier::CROSSED_OUT),
+                        )
+                        .gray(),
+                    );
                 } else {
-                    format!("☐ {}", t.task())
+                    list_items.push(ListItem::new(format!("☐ {}", item.task()).white()));
                 }
-            });
-            let list = List::new(items).block(block).highlight_style(
+            }
+
+            let list = List::new(list_items).block(block).highlight_style(
                 Style::default()
                     .fg(Color::LightYellow)
                     .add_modifier(Modifier::BOLD),
             );
             StatefulWidget::render(list, area, buf, &mut self.task_state);
 
+            // description widget TODO: move to its own function
             let selected_idx = self.task_state.selected().unwrap_or(0) as u16;
 
             if let Some(task_description) = self.selected_task()
