@@ -1,7 +1,7 @@
 use color_eyre::Result;
 use crossterm::event::{
     self, Event,
-    KeyCode::{self, Menu},
+    KeyCode::{self},
     KeyEvent, KeyEventKind, KeyModifiers,
 };
 use ratatui::{
