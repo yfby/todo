@@ -64,6 +64,10 @@ impl TaskList {
         &self.name
     }
 
+    pub fn rename(&mut self, new_name: &str) {
+        self.name = new_name.to_owned();
+    }
+
     pub fn get_task(&mut self, index: usize) -> Option<&mut Task> {
         self.tasks.get_mut(index)
     }
@@ -106,7 +110,7 @@ impl Task {
         &self.task
     }
 
-    pub fn change_task(&mut self, new_task: &str) {
+    pub fn rename(&mut self, new_task: &str) {
         self.task = new_task.to_owned();
     }
 

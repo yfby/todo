@@ -223,6 +223,17 @@ impl App {
                     }
                 }
             }
+            (KeyCode::Char('R'), KeyModifiers::SHIFT) => {
+                if let Some(index) = self.menu_state.selected() {
+                    let list_name = self
+                        .task_collection
+                        .get_list(index)
+                        .map(|l| l.name().to_string());
+                    if let Some(ref name) = list_name {
+                        self.enter_write(WriteType::RenameMenu, Some(name));
+                    }
+                }
+            }
 
             // special
             (KeyCode::Char('K'), KeyModifiers::SHIFT) | (KeyCode::Down, KeyModifiers::SHIFT) => {
@@ -377,10 +388,18 @@ impl App {
 
                         task_list.add_task(task::Task::new(self.write_input.final_input(), &None));
                     }
-                    WriteType::RenameMenu => todo!(),
+                    WriteType::RenameMenu => {
+                        let Some(index) = self.menu_state.selected() else {
+                            return;
+                        };
+                        let Some(task_list) = self.task_collection.get_list(index) else {
+                            return;
+                        };
+                        task_list.rename(self.write_input.final_input());
+                    }
                     WriteType::RenameTask => {
                         let new_name = self.write_input.final_input().to_owned();
-                        self.selected_task().unwrap().change_task(&new_name);
+                        self.selected_task().unwrap().rename(&new_name);
                     }
                     WriteType::TaskDescription => {
                         let new_desc = self.write_input.final_input().to_string();
@@ -482,35 +501,10 @@ impl App {
 
         let task_menu_area = chunks[0];
         let task_body_area = chunks[1];
-        // if self.current_interface == CurrentInterface::Write {
-        // }
-        // Layout::vertical([Constraint::Length(3), Constraint::Fill(1)]).split(chunks[1]);
 
         self.render_task_menu(task_menu_area, buf);
         self.render_task_body(task_body_area, buf);
 
-        // let selected_idx = self.task_state.selected().unwrap_or(0) as u16;
-        //
-        // if let Some(task_description) = self.selected_task()
-        //     && task_description.description().is_some()
-        // {
-        //     // set description area
-        //     let mut descripton_area = area.resize(Size::new(50, 10));
-        //     descripton_area.x += 1;
-        //     descripton_area.y = descripton_area.y + 2 + selected_idx;
-        //
-        //     Clear.render(descripton_area, buf);
-        //     let description = task_description.description().unwrap_or("").to_string();
-        //
-        //     // check if in write mode else show descripton
-        //     if self.current_interface == CurrentInterface::Write
-        //         && self.write_input.write_type == WriteType::TaskDescription
-        //     {
-        //         self.write_widget(descripton_area, buf);
-        //     } else {
-        //         self.description_widget(&description, descripton_area, buf);
-        //     }
-        // }
         self.write_widget(area, buf);
     }
 
