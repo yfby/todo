@@ -9,7 +9,7 @@ use ratatui::{
     buffer::Buffer,
     layout::{Alignment, Constraint, Layout, Position, Rect, Size},
     style::{Color, Modifier, Style, Stylize},
-    widgets::{Block, Clear, List, ListItem, ListState, Paragraph, StatefulWidget, Widget},
+    widgets::{Block, Clear, List, ListItem, ListState, Paragraph, StatefulWidget, Widget, Wrap},
 };
 use std::io;
 
@@ -55,11 +55,17 @@ struct WriteInterface {
     write_type: WriteType,
 }
 
+#[derive(PartialEq)]
 enum WriteType {
     Menu,
     Task,
+    RenameMenu,
+    RenameTask,
     TaskDescription,
 }
+
+// app settings
+const DESCRIPTION_LINE_END: usize = 30;
 
 impl WriteInterface {
     fn move_cursor_left(&mut self) {
@@ -290,7 +296,7 @@ impl App {
                 }
             }
 
-            // special actial
+            // special keys
             (KeyCode::Char('K'), KeyModifiers::SHIFT) | (KeyCode::Down, KeyModifiers::SHIFT) => {
                 let Some(task_index) = self.task_state.selected() else {
                     return;
@@ -325,8 +331,7 @@ impl App {
                     self.task_state.select_previous()
                 }
             }
-            (KeyCode::Char('A'), KeyModifiers::SHIFT)
-            | (KeyCode::Char('I'), KeyModifiers::SHIFT) => {
+            (KeyCode::Char('A'), KeyModifiers::SHIFT) => {
                 if let Some(task_description) = self.selected_task()
                     && let Some(desc) = task_description.description()
                 {
@@ -335,6 +340,20 @@ impl App {
                 } else {
                     self.enter_write(WriteType::TaskDescription, None);
                 }
+            }
+            (KeyCode::Char('R'), KeyModifiers::SHIFT) => {
+                let Some(task_index) = self.task_state.selected() else {
+                    return;
+                };
+                let Some(task_list) = self
+                    .menu_state
+                    .selected()
+                    .and_then(|index| self.task_collection.get_list(index))
+                else {
+                    return;
+                };
+                let task_name = task_list.get_task(task_index).unwrap().task().to_string();
+                self.enter_write(WriteType::RenameTask, Some(&task_name));
             }
             _ => {}
         }
@@ -357,6 +376,11 @@ impl App {
                         };
 
                         task_list.add_task(task::Task::new(self.write_input.final_input(), &None));
+                    }
+                    WriteType::RenameMenu => todo!(),
+                    WriteType::RenameTask => {
+                        let new_name = self.write_input.final_input().to_owned();
+                        self.selected_task().unwrap().change_task(&new_name);
                     }
                     WriteType::TaskDescription => {
                         let new_desc = self.write_input.final_input().to_string();
@@ -465,6 +489,28 @@ impl App {
         self.render_task_menu(task_menu_area, buf);
         self.render_task_body(task_body_area, buf);
 
+        // let selected_idx = self.task_state.selected().unwrap_or(0) as u16;
+        //
+        // if let Some(task_description) = self.selected_task()
+        //     && task_description.description().is_some()
+        // {
+        //     // set description area
+        //     let mut descripton_area = area.resize(Size::new(50, 10));
+        //     descripton_area.x += 1;
+        //     descripton_area.y = descripton_area.y + 2 + selected_idx;
+        //
+        //     Clear.render(descripton_area, buf);
+        //     let description = task_description.description().unwrap_or("").to_string();
+        //
+        //     // check if in write mode else show descripton
+        //     if self.current_interface == CurrentInterface::Write
+        //         && self.write_input.write_type == WriteType::TaskDescription
+        //     {
+        //         self.write_widget(descripton_area, buf);
+        //     } else {
+        //         self.description_widget(&description, descripton_area, buf);
+        //     }
+        // }
         self.write_widget(area, buf);
     }
 
@@ -532,25 +578,28 @@ impl App {
             );
             StatefulWidget::render(list, area, buf, &mut self.task_state);
 
-            // description widget TODO: move to its own function
+            // description
             let selected_idx = self.task_state.selected().unwrap_or(0) as u16;
 
             if let Some(task_description) = self.selected_task()
                 && task_description.description().is_some()
             {
-                let description_block = Block::bordered()
-                    .border_style(Style::new().light_green())
-                    .title("Description")
-                    .title_alignment(Alignment::Center);
+                // set description area
                 let mut descripton_area = area.resize(Size::new(50, 10));
-
                 descripton_area.x += 1;
                 descripton_area.y = descripton_area.y + 2 + selected_idx;
 
                 Clear.render(descripton_area, buf);
-                Paragraph::new(task_description.description().unwrap_or(""))
-                    .block(description_block)
-                    .render(descripton_area, buf);
+                let description = task_description.description().unwrap_or("").to_string();
+
+                // check if in write mode else show descripton
+                if self.current_interface == CurrentInterface::Write
+                    && self.write_input.write_type == WriteType::TaskDescription
+                {
+                    self.write_widget(descripton_area, buf);
+                } else {
+                    self.description_widget(&description, descripton_area, buf);
+                }
             }
         } else {
             let msg_area = area.centered(Constraint::Length(40), Constraint::Length(1));
@@ -568,11 +617,22 @@ impl App {
         }
     }
 
-    fn write_widget(&mut self, area: Rect, buf: &mut Buffer) {
-        let write_area = area.centered(Constraint::Length(30), Constraint::Length(3));
+    fn description_widget(&mut self, description: &str, area: Rect, buf: &mut Buffer) {
+        let block = Block::bordered()
+            .border_style(Style::new().light_green())
+            .title("Description")
+            .title_alignment(Alignment::Center);
 
+        Paragraph::new(description)
+            .wrap(Wrap { trim: false })
+            .block(block)
+            .render(area, buf);
+    }
+
+    fn write_widget(&mut self, area: Rect, buf: &mut Buffer) {
+        let area = area.centered(Constraint::Length(30), Constraint::Length(3));
         if self.current_interface == CurrentInterface::Write {
-            Clear.render(write_area, buf);
+            Clear.render(area, buf);
 
             let mut write_block = Block::bordered();
 
@@ -582,10 +642,24 @@ impl App {
 
             match self.write_input.write_type {
                 WriteType::Menu => {
-                    write_block = write_block.title("Menu").title_alignment(Alignment::Center);
+                    write_block = write_block
+                        .title("New Menu")
+                        .title_alignment(Alignment::Center);
                 }
                 WriteType::Task => {
-                    write_block = write_block.title("Task").title_alignment(Alignment::Center);
+                    write_block = write_block
+                        .title("New Task")
+                        .title_alignment(Alignment::Center);
+                }
+                WriteType::RenameMenu => {
+                    write_block = write_block
+                        .title("New Menu Name")
+                        .title_alignment(Alignment::Center);
+                }
+                WriteType::RenameTask => {
+                    write_block = write_block
+                        .title("New Task Name")
+                        .title_alignment(Alignment::Center);
                 }
                 WriteType::TaskDescription => {
                     write_block = write_block
@@ -595,18 +669,20 @@ impl App {
             }
 
             Paragraph::new(self.write_input.final_input())
+                .wrap(Wrap { trim: false })
                 .block(write_block)
-                .render(write_area, buf);
+                .render(area, buf);
 
             // cursor positioning
             self.cursor_position = Some(Position::new(
-                write_area.x + self.write_input.character_index as u16 + 1,
-                write_area.y + 1,
+                area.x + self.write_input.character_index as u16 + 1,
+                area.y + 1,
             ));
         } else {
             self.cursor_position = None;
         }
     }
+
     fn enter_write(&mut self, write_type: WriteType, set_input: Option<&String>) {
         self.previous_layout = self.current_layout;
         self.previous_interface = self.current_interface;

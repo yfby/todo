@@ -106,6 +106,10 @@ impl Task {
         &self.task
     }
 
+    pub fn change_task(&mut self, new_task: &str) {
+        self.task = new_task.to_owned();
+    }
+
     pub fn description(&self) -> Option<&str> {
         self.description.as_deref()
     }
