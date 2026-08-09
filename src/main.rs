@@ -33,11 +33,13 @@ struct App {
     task_state: ListState,
     write_input: WriteInterface,
     cursor_position: Option<Position>,
+    error_message: Option<String>,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 enum CurrentLayout {
     Task,
+    #[allow(dead_code)]
     Exit,
 }
 
@@ -46,6 +48,7 @@ enum CurrentInterface {
     TaskMenu,
     TaskBody,
     Write,
+    #[allow(dead_code)]
     Exit, // TODO: confirm exit
 }
 
@@ -55,7 +58,7 @@ struct WriteInterface {
     write_type: WriteType,
 }
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Clone, Copy)]
 enum WriteType {
     Menu,
     Task,
@@ -63,9 +66,6 @@ enum WriteType {
     RenameTask,
     TaskDescription,
 }
-
-// app settings
-const DESCRIPTION_LINE_END: usize = 30;
 
 impl WriteInterface {
     fn move_cursor_left(&mut self) {
@@ -135,6 +135,7 @@ impl Default for App {
                 write_type: WriteType::Menu,
             },
             cursor_position: None,
+            error_message: None,
         }
     }
 }
@@ -146,7 +147,6 @@ impl App {
             terminal.draw(|frame| {
                 frame.render_widget(&mut self, frame.area());
 
-                // set cursor position for writing
                 if let Some(pos) = self.cursor_position {
                     frame.set_cursor_position(pos);
                 }
@@ -166,13 +166,6 @@ impl App {
         };
         Ok(())
     }
-
-    fn selected_task(&mut self) -> Option<&mut task::Task> {
-        let index = self.menu_state.selected()?;
-        let list = self.task_collection.get_list(index)?;
-        let task_index = self.task_state.selected()?;
-        list.get_task(task_index)
-    }
 }
 
 /// Event Logic
@@ -182,7 +175,7 @@ impl App {
             CurrentInterface::TaskMenu => self.key_event_task_menu(key_event),
             CurrentInterface::TaskBody => self.key_event_task_body(key_event),
             CurrentInterface::Write => self.key_event_write(key_event),
-            CurrentInterface::Exit => todo!(),
+            CurrentInterface::Exit => {} // TODO: confirm exit
         }
     }
 
@@ -190,11 +183,11 @@ impl App {
         match (key_event.code, key_event.modifiers) {
             // navigation
             (KeyCode::Esc, KeyModifiers::NONE) => self.menu_state.select(None),
-            (KeyCode::Char('k'), KeyModifiers::NONE) | (KeyCode::Down, KeyModifiers::NONE) => {
+            (KeyCode::Char('j'), KeyModifiers::NONE) | (KeyCode::Down, KeyModifiers::NONE) => {
                 self.menu_state.select_next();
                 self.task_state.select(None);
             }
-            (KeyCode::Char('j'), KeyModifiers::NONE) | (KeyCode::Up, KeyModifiers::NONE) => {
+            (KeyCode::Char('k'), KeyModifiers::NONE) | (KeyCode::Up, KeyModifiers::NONE) => {
                 self.menu_state.select_previous();
                 self.task_state.select(None);
             }
@@ -212,8 +205,9 @@ impl App {
                 self.enter_write(WriteType::Menu, None);
             }
             (KeyCode::Char('d'), KeyModifiers::NONE) | (KeyCode::Delete, KeyModifiers::NONE) => {
-                if let Some(index) = self.menu_state.selected() {
-                    self.task_collection.remove_list(index);
+                if let Some(index) = self.menu_state.selected()
+                    && self.task_collection.remove_list(index)
+                {
                     self.task_state.select(None);
                     if self.task_collection.lists().is_empty() {
                         self.menu_state.select(None);
@@ -224,18 +218,15 @@ impl App {
                 }
             }
             (KeyCode::Char('R'), KeyModifiers::SHIFT) => {
-                if let Some(index) = self.menu_state.selected() {
-                    let list_name = self
-                        .task_collection
-                        .get_list(index)
-                        .map(|l| l.name().to_string());
-                    if let Some(ref name) = list_name {
-                        self.enter_write(WriteType::RenameMenu, Some(name));
-                    }
+                if let Some(index) = self.menu_state.selected()
+                    && let Some(list) = self.task_collection.get_list(index)
+                {
+                    let name = list.name().to_string();
+                    self.enter_write(WriteType::RenameMenu, Some(&name));
                 }
             }
 
-            // special
+            // reorder
             (KeyCode::Char('K'), KeyModifiers::SHIFT) | (KeyCode::Down, KeyModifiers::SHIFT) => {
                 if let Some(task_index) = self.menu_state.selected()
                     && (task_index + 1) < self.task_collection.lists().len()
@@ -257,7 +248,6 @@ impl App {
                 }
             }
 
-            // TODO: make universal
             (KeyCode::Char('q'), KeyModifiers::NONE) => self.exit(),
             (KeyCode::Char('w'), KeyModifiers::NONE) => self.save(),
             _ => {}
@@ -272,10 +262,10 @@ impl App {
             | (KeyCode::Esc, KeyModifiers::NONE) => {
                 self.current_interface = CurrentInterface::TaskMenu
             }
-            (KeyCode::Char('k'), KeyModifiers::NONE) | (KeyCode::Down, KeyModifiers::NONE) => {
+            (KeyCode::Char('j'), KeyModifiers::NONE) | (KeyCode::Down, KeyModifiers::NONE) => {
                 self.task_state.select_next()
             }
-            (KeyCode::Char('j'), KeyModifiers::NONE) | (KeyCode::Up, KeyModifiers::NONE) => {
+            (KeyCode::Char('k'), KeyModifiers::NONE) | (KeyCode::Up, KeyModifiers::NONE) => {
                 self.task_state.select_previous()
             }
 
@@ -290,24 +280,31 @@ impl App {
                 let Some(task_list) = self
                     .menu_state
                     .selected()
-                    .and_then(|index| self.task_collection.get_list(index))
+                    .and_then(|index| self.task_collection.get_list_mut(index))
                 else {
                     return;
                 };
-                task_list.remove_task(task_index);
-                if task_list.tasks().is_empty() {
-                    self.task_state.select(None);
-                } else if task_index >= task_list.tasks().len() {
-                    self.task_state.select(Some(task_list.tasks().len() - 1));
+                if task_list.remove_task(task_index) {
+                    if task_list.tasks().is_empty() {
+                        self.task_state.select(None);
+                    } else if task_index >= task_list.tasks().len() {
+                        self.task_state.select(Some(task_list.tasks().len() - 1));
+                    }
                 }
             }
             (KeyCode::Char(' '), KeyModifiers::NONE) | (KeyCode::Enter, KeyModifiers::NONE) => {
-                if let Some(task) = self.selected_task() {
+                if let Some((list_index, task_index)) =
+                    self.menu_state.selected().zip(self.task_state.selected())
+                    && let Some(task) = self
+                        .task_collection
+                        .get_list_mut(list_index)
+                        .and_then(|l| l.get_task_mut(task_index))
+                {
                     task.toggle();
                 }
             }
 
-            // special keys
+            // reorder
             (KeyCode::Char('K'), KeyModifiers::SHIFT) | (KeyCode::Down, KeyModifiers::SHIFT) => {
                 let Some(task_index) = self.task_state.selected() else {
                     return;
@@ -315,7 +312,7 @@ impl App {
                 let Some(task_list) = self
                     .menu_state
                     .selected()
-                    .and_then(|index| self.task_collection.get_list(index))
+                    .and_then(|index| self.task_collection.get_list_mut(index))
                 else {
                     return;
                 };
@@ -332,7 +329,7 @@ impl App {
                 let Some(task_list) = self
                     .menu_state
                     .selected()
-                    .and_then(|index| self.task_collection.get_list(index))
+                    .and_then(|index| self.task_collection.get_list_mut(index))
                 else {
                     return;
                 };
@@ -343,27 +340,33 @@ impl App {
                 }
             }
             (KeyCode::Char('A'), KeyModifiers::SHIFT) => {
-                if let Some(task_description) = self.selected_task()
-                    && let Some(desc) = task_description.description()
-                {
-                    let desc_string = desc.to_string();
-                    self.enter_write(WriteType::TaskDescription, Some(&desc_string));
-                } else {
-                    self.enter_write(WriteType::TaskDescription, None);
-                }
-            }
-            (KeyCode::Char('R'), KeyModifiers::SHIFT) => {
-                let Some(task_index) = self.task_state.selected() else {
-                    return;
-                };
-                let Some(task_list) = self
-                    .menu_state
-                    .selected()
-                    .and_then(|index| self.task_collection.get_list(index))
+                let Some((list_index, task_index)) =
+                    self.menu_state.selected().zip(self.task_state.selected())
                 else {
                     return;
                 };
-                let task_name = task_list.get_task(task_index).unwrap().task().to_string();
+                let desc = self
+                    .task_collection
+                    .get_list(list_index)
+                    .and_then(|l| l.get_task(task_index))
+                    .and_then(|t| t.description())
+                    .map(String::from);
+                self.enter_write(WriteType::TaskDescription, desc.as_deref());
+            }
+            (KeyCode::Char('R'), KeyModifiers::SHIFT) => {
+                let Some((list_index, task_index)) =
+                    self.menu_state.selected().zip(self.task_state.selected())
+                else {
+                    return;
+                };
+                let Some(task_name) = self
+                    .task_collection
+                    .get_list(list_index)
+                    .and_then(|l| l.get_task(task_index))
+                    .map(|t| t.task().to_string())
+                else {
+                    return;
+                };
                 self.enter_write(WriteType::RenameTask, Some(&task_name));
             }
             _ => {}
@@ -374,41 +377,60 @@ impl App {
         match (key_event.code, key_event.modifiers) {
             (KeyCode::Enter, KeyModifiers::NONE) => {
                 match self.write_input.write_type {
-                    WriteType::Menu => self
-                        .task_collection
-                        .add_list(task::TaskList::new(self.write_input.final_input())),
+                    WriteType::Menu => {
+                        self.task_collection
+                            .add_list(task::TaskList::new(self.write_input.final_input()));
+                    }
                     WriteType::Task => {
-                        let Some(task_list) = self
+                        if let Some(task_list) = self
                             .menu_state
                             .selected()
-                            .and_then(|index| self.task_collection.get_list(index))
-                        else {
-                            return;
-                        };
-
-                        task_list.add_task(task::Task::new(self.write_input.final_input(), &None));
+                            .and_then(|index| self.task_collection.get_list_mut(index))
+                        {
+                            task_list
+                                .add_task(task::Task::new(self.write_input.final_input(), None));
+                        }
                     }
                     WriteType::RenameMenu => {
-                        let Some(index) = self.menu_state.selected() else {
-                            return;
-                        };
-                        let Some(task_list) = self.task_collection.get_list(index) else {
-                            return;
-                        };
-                        task_list.rename(self.write_input.final_input());
+                        if let Some(task_list) = self
+                            .menu_state
+                            .selected()
+                            .and_then(|index| self.task_collection.get_list_mut(index))
+                        {
+                            task_list.rename(self.write_input.final_input());
+                        }
                     }
                     WriteType::RenameTask => {
-                        let new_name = self.write_input.final_input().to_owned();
-                        self.selected_task().unwrap().rename(&new_name);
+                        if let Some((list_index, task_index)) =
+                            self.menu_state.selected().zip(self.task_state.selected())
+                        {
+                            let new_name = self.write_input.final_input().to_owned();
+                            if let Some(task) = self
+                                .task_collection
+                                .get_list_mut(list_index)
+                                .and_then(|l| l.get_task_mut(task_index))
+                            {
+                                task.rename(&new_name);
+                            }
+                        }
                     }
                     WriteType::TaskDescription => {
-                        let new_desc = self.write_input.final_input().to_string();
-                        if new_desc.is_empty() {
-                            self.selected_task().unwrap().change_description(&None);
-                        } else {
-                            self.selected_task()
-                                .unwrap()
-                                .change_description(&Some(new_desc));
+                        if let Some((list_index, task_index)) =
+                            self.menu_state.selected().zip(self.task_state.selected())
+                        {
+                            let new_desc = self.write_input.final_input().to_string();
+                            let desc = if new_desc.is_empty() {
+                                None
+                            } else {
+                                Some(new_desc.as_str())
+                            };
+                            if let Some(task) = self
+                                .task_collection
+                                .get_list_mut(list_index)
+                                .and_then(|l| l.get_task_mut(task_index))
+                            {
+                                task.change_description(desc);
+                            }
                         }
                     }
                 }
@@ -432,7 +454,6 @@ impl App {
                     let chars: Vec<char> = self.write_input.input.chars().collect();
                     let mut new_chars = chars[..idx - 1].to_vec();
                     let after = &chars[idx..];
-                    // skip trailing whitespace, then skip one word
                     let mut skip = 0;
                     for c in after.iter() {
                         if *c == ' ' {
@@ -441,7 +462,6 @@ impl App {
                             break;
                         }
                     }
-                    // skip the word after spaces
                     let mut word_skipped = false;
                     for c in after[skip..].iter() {
                         if *c == ' ' && word_skipped {
@@ -475,12 +495,13 @@ impl App {
     }
 
     fn exit(&mut self) {
+        self.save();
         self.exit = true;
     }
 
-    fn save(&self) {
+    fn save(&mut self) {
         if let Err(error) = task::save_to_file(&self.task_collection, SAVE_FILE) {
-            eprintln!("Problem opening the file: {:?}", error);
+            self.error_message = Some(format!("Failed to save: {error}"));
         }
     }
 }
@@ -490,7 +511,7 @@ impl Widget for &mut App {
     fn render(self, area: Rect, buf: &mut Buffer) {
         match self.current_layout {
             CurrentLayout::Task => self.render_task_layout(area, buf),
-            CurrentLayout::Exit => todo!(),
+            CurrentLayout::Exit => {} // TODO: confirm exit
         }
     }
 }
@@ -506,6 +527,7 @@ impl App {
         self.render_task_body(task_body_area, buf);
 
         self.write_widget(area, buf);
+        self.render_error_message(area, buf);
     }
 
     fn render_task_menu(&mut self, area: Rect, buf: &mut Buffer) {
@@ -575,24 +597,27 @@ impl App {
             // description
             let selected_idx = self.task_state.selected().unwrap_or(0) as u16;
 
-            if let Some(task_description) = self.selected_task()
-                && task_description.description().is_some()
+            if let Some((list_index, task_index)) =
+                self.menu_state.selected().zip(self.task_state.selected())
+                && let Some(task) = self
+                    .task_collection
+                    .get_list(list_index)
+                    .and_then(|l| l.get_task(task_index))
+                && task.description().is_some()
             {
-                // set description area
-                let mut descripton_area = area.resize(Size::new(50, 10));
-                descripton_area.x += 1;
-                descripton_area.y = descripton_area.y + 2 + selected_idx;
+                let mut description_area = area.resize(Size::new(50, 10));
+                description_area.x += 1;
+                description_area.y = description_area.y + 2 + selected_idx;
 
-                Clear.render(descripton_area, buf);
-                let description = task_description.description().unwrap_or("").to_string();
+                Clear.render(description_area, buf);
+                let description = task.description().unwrap_or("").to_string();
 
-                // check if in write mode else show descripton
                 if self.current_interface == CurrentInterface::Write
                     && self.write_input.write_type == WriteType::TaskDescription
                 {
-                    self.write_widget(descripton_area, buf);
+                    self.write_widget(description_area, buf);
                 } else {
-                    self.description_widget(&description, descripton_area, buf);
+                    self.description_widget(&description, description_area, buf);
                 }
             }
         } else {
@@ -628,11 +653,8 @@ impl App {
         if self.current_interface == CurrentInterface::Write {
             Clear.render(area, buf);
 
-            let mut write_block = Block::bordered();
-
-            if self.current_interface == CurrentInterface::Write {
-                write_block = write_block.border_style(Style::new().light_blue());
-            }
+            let mut write_block = Block::bordered()
+                .border_style(Style::new().light_blue());
 
             match self.write_input.write_type {
                 WriteType::Menu => {
@@ -667,7 +689,6 @@ impl App {
                 .block(write_block)
                 .render(area, buf);
 
-            // cursor positioning
             self.cursor_position = Some(Position::new(
                 area.x + self.write_input.character_index as u16 + 1,
                 area.y + 1,
@@ -677,17 +698,26 @@ impl App {
         }
     }
 
-    fn enter_write(&mut self, write_type: WriteType, set_input: Option<&String>) {
+    fn render_error_message(&mut self, area: Rect, buf: &mut Buffer) {
+        if let Some(ref msg) = self.error_message {
+            let error_area = Rect {
+                x: area.x,
+                y: area.y + area.height.saturating_sub(1),
+                width: area.width.min(msg.len() as u16 + 4),
+                height: 1,
+            };
+            Paragraph::new(msg.as_str())
+                .style(Style::new().fg(Color::Red).add_modifier(Modifier::BOLD))
+                .render(error_area, buf);
+        }
+    }
+
+    fn enter_write(&mut self, write_type: WriteType, set_input: Option<&str>) {
         self.previous_layout = self.current_layout;
         self.previous_interface = self.current_interface;
         self.write_input.reset_cursor();
-        if let Some(input) = set_input {
-            self.write_input.input = input.clone();
-        } else {
-            self.write_input.input = String::new();
-        }
+        self.write_input.input = set_input.unwrap_or_default().to_string();
         self.write_input.write_type = write_type;
-
         self.current_interface = CurrentInterface::Write;
     }
 }

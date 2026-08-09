@@ -6,6 +6,7 @@ use std::path::Path;
 pub struct TaskListCollection {
     task_lists: Vec<TaskList>,
 }
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TaskList {
     name: String,
@@ -28,8 +29,13 @@ impl TaskListCollection {
         self.task_lists.push(list);
     }
 
-    pub fn remove_list(&mut self, index: usize) {
-        self.task_lists.remove(index);
+    pub fn remove_list(&mut self, index: usize) -> bool {
+        if index < self.task_lists.len() {
+            self.task_lists.remove(index);
+            true
+        } else {
+            false
+        }
     }
 
     pub fn get_list_names(&self) -> Vec<String> {
@@ -39,7 +45,11 @@ impl TaskListCollection {
             .collect()
     }
 
-    pub fn get_list(&mut self, index: usize) -> Option<&mut TaskList> {
+    pub fn get_list(&self, index: usize) -> Option<&TaskList> {
+        self.task_lists.get(index)
+    }
+
+    pub fn get_list_mut(&mut self, index: usize) -> Option<&mut TaskList> {
         self.task_lists.get_mut(index)
     }
 
@@ -68,7 +78,11 @@ impl TaskList {
         self.name = new_name.to_owned();
     }
 
-    pub fn get_task(&mut self, index: usize) -> Option<&mut Task> {
+    pub fn get_task(&self, index: usize) -> Option<&Task> {
+        self.tasks.get(index)
+    }
+
+    pub fn get_task_mut(&mut self, index: usize) -> Option<&mut Task> {
         self.tasks.get_mut(index)
     }
 
@@ -76,8 +90,13 @@ impl TaskList {
         self.tasks.push(task);
     }
 
-    pub fn remove_task(&mut self, index: usize) {
-        self.tasks.remove(index);
+    pub fn remove_task(&mut self, index: usize) -> bool {
+        if index < self.tasks.len() {
+            self.tasks.remove(index);
+            true
+        } else {
+            false
+        }
     }
 
     pub fn tasks(&self) -> &[Task] {
@@ -90,11 +109,11 @@ impl TaskList {
 }
 
 impl Task {
-    pub fn new(task: &str, description: &Option<String>) -> Self {
+    pub fn new(task: &str, description: Option<&str>) -> Self {
         Task {
             completed: false,
             task: task.to_string(),
-            description: description.clone(),
+            description: description.map(String::from),
         }
     }
 
@@ -118,19 +137,21 @@ impl Task {
         self.description.as_deref()
     }
 
-    pub fn change_description(&mut self, description: &Option<String>) {
-        self.description = description.clone();
+    pub fn change_description(&mut self, description: Option<&str>) {
+        self.description = description.map(String::from);
     }
 }
 
 pub fn save_to_file(list: &TaskListCollection, path: &str) -> std::io::Result<()> {
-    let json = serde_json::to_string_pretty(list).expect("Failed to serialize TaskListCollection");
+    let json = serde_json::to_string_pretty(list)
+        .map_err(std::io::Error::other)?;
     fs::write(path, json)
 }
 
 pub fn load_from_file(path: &str) -> std::io::Result<TaskListCollection> {
     let data = fs::read_to_string(path)?;
-    let task_lists = serde_json::from_str(&data).expect("Failed to deserialize TaskListCollection");
+    let task_lists = serde_json::from_str(&data)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
     Ok(task_lists)
 }
 
