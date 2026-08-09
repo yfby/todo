@@ -583,7 +583,7 @@ impl App {
                         .gray(),
                     );
                 } else {
-                    list_items.push(ListItem::new(format!("☐ {}", item.task()).white()));
+                    list_items.push(ListItem::new(format!("☐ {}", item.task()).bold().white()));
                 }
             }
 
@@ -653,8 +653,7 @@ impl App {
         if self.current_interface == CurrentInterface::Write {
             Clear.render(area, buf);
 
-            let mut write_block = Block::bordered()
-                .border_style(Style::new().light_blue());
+            let mut write_block = Block::bordered().border_style(Style::new().light_blue());
 
             match self.write_input.write_type {
                 WriteType::Menu => {
