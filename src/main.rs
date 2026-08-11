@@ -28,6 +28,7 @@ struct App {
     current_interface: CurrentInterface,
     previous_layout: CurrentLayout,
     previous_interface: CurrentInterface,
+    original_task_collection: task::TaskListCollection,
     task_collection: task::TaskListCollection,
     menu_state: ListState,
     task_state: ListState,
@@ -126,6 +127,7 @@ impl Default for App {
             current_interface: CurrentInterface::TaskMenu,
             previous_layout: CurrentLayout::Task,
             previous_interface: CurrentInterface::TaskMenu,
+            original_task_collection: task::load_or_default(SAVE_FILE),
             task_collection: task::load_or_default(SAVE_FILE),
             menu_state: ListState::default().with_selected(Some(0)),
             task_state: ListState::default().with_selected(None),
@@ -380,6 +382,9 @@ impl App {
                     WriteType::Menu => {
                         self.task_collection
                             .add_list(task::TaskList::new(self.write_input.final_input()));
+                        // select the newly added menu
+                        self.menu_state
+                            .select(Some(self.task_collection.lists().len() - 1));
                     }
                     WriteType::Task => {
                         if let Some(task_list) = self
@@ -495,13 +500,15 @@ impl App {
     }
 
     fn exit(&mut self) {
-        self.save();
         self.exit = true;
     }
 
     fn save(&mut self) {
         if let Err(error) = task::save_to_file(&self.task_collection, SAVE_FILE) {
             self.error_message = Some(format!("Failed to save: {error}"));
+        } else {
+            self.original_task_collection = self.task_collection.clone();
+            self.error_message = None;
         }
     }
 }
@@ -528,6 +535,18 @@ impl App {
 
         self.write_widget(area, buf);
         self.render_error_message(area, buf);
+
+        if self.task_collection != self.original_task_collection {
+            let unsaved_area = Rect {
+                x: area.x + 1,
+                y: area.y + area.height.saturating_sub(1),
+                width: area.width,
+                height: 1,
+            };
+            Paragraph::new(" Unsaved Changes* ")
+                .style(Style::new().add_modifier(Modifier::BOLD))
+                .render(unsaved_area, buf);
+        }
     }
 
     fn render_task_menu(&mut self, area: Rect, buf: &mut Buffer) {

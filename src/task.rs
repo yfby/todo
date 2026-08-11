@@ -2,18 +2,18 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
 
-#[derive(Debug, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
 pub struct TaskListCollection {
     task_lists: Vec<TaskList>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TaskList {
     name: String,
     tasks: Vec<Task>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Task {
     completed: bool,
     task: String,
@@ -143,8 +143,7 @@ impl Task {
 }
 
 pub fn save_to_file(list: &TaskListCollection, path: &str) -> std::io::Result<()> {
-    let json = serde_json::to_string_pretty(list)
-        .map_err(std::io::Error::other)?;
+    let json = serde_json::to_string_pretty(list).map_err(std::io::Error::other)?;
     fs::write(path, json)
 }
 
