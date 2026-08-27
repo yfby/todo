@@ -378,6 +378,11 @@ impl App {
     fn key_event_write(&mut self, key_event: KeyEvent) {
         match (key_event.code, key_event.modifiers) {
             (KeyCode::Enter, KeyModifiers::NONE) => {
+                if self.write_input.final_input().is_empty() {
+                    self.current_layout = self.previous_layout;
+                    self.current_interface = self.previous_interface;
+                    return;
+                }
                 match self.write_input.write_type {
                     WriteType::Menu => {
                         self.task_collection
