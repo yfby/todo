@@ -12,10 +12,9 @@ use ratatui::{
     widgets::{Block, Clear, List, ListItem, ListState, Paragraph, StatefulWidget, Widget, Wrap},
 };
 use std::io;
+use std::path::PathBuf;
 
 mod task;
-
-const SAVE_FILE: &str = "tasks.json";
 
 fn main() -> Result<()> {
     color_eyre::install()?;
@@ -28,6 +27,7 @@ struct App {
     current_interface: CurrentInterface,
     previous_layout: CurrentLayout,
     previous_interface: CurrentInterface,
+    save_path: Option<PathBuf>,
     original_task_collection: task::TaskListCollection,
     task_collection: task::TaskListCollection,
     menu_state: ListState,
@@ -121,14 +121,23 @@ impl WriteInterface {
 
 impl Default for App {
     fn default() -> Self {
+        let save_path = task::save_file_path();
+        let load = |path: &Option<PathBuf>| -> task::TaskListCollection {
+            path.as_ref()
+                .and_then(|p| p.to_str())
+                .map(task::load_or_default)
+                .unwrap_or_default()
+        };
+        let original = load(&save_path);
         Self {
             exit: false,
             current_layout: CurrentLayout::Task,
             current_interface: CurrentInterface::TaskMenu,
             previous_layout: CurrentLayout::Task,
             previous_interface: CurrentInterface::TaskMenu,
-            original_task_collection: task::load_or_default(SAVE_FILE),
-            task_collection: task::load_or_default(SAVE_FILE),
+            save_path,
+            original_task_collection: original.clone(),
+            task_collection: original,
             menu_state: ListState::default().with_selected(Some(0)),
             task_state: ListState::default().with_selected(None),
             write_input: WriteInterface {
@@ -509,7 +518,15 @@ impl App {
     }
 
     fn save(&mut self) {
-        if let Err(error) = task::save_to_file(&self.task_collection, SAVE_FILE) {
+        let Some(ref path) = self.save_path else {
+            self.error_message = Some("Could not determine data directory".to_string());
+            return;
+        };
+        let Some(path_str) = path.to_str() else {
+            self.error_message = Some("Invalid save path".to_string());
+            return;
+        };
+        if let Err(error) = task::save_to_file(&self.task_collection, path_str) {
             self.error_message = Some(format!("Failed to save: {error}"));
         } else {
             self.original_task_collection = self.task_collection.clone();

@@ -1,6 +1,7 @@
+use dirs::data_dir;
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
 pub struct TaskListCollection {
@@ -142,8 +143,15 @@ impl Task {
     }
 }
 
+pub fn save_file_path() -> Option<PathBuf> {
+    data_dir().map(|d| d.join("todo").join("tasks.json"))
+}
+
 pub fn save_to_file(list: &TaskListCollection, path: &str) -> std::io::Result<()> {
     let json = serde_json::to_string_pretty(list).map_err(std::io::Error::other)?;
+    if let Some(parent) = Path::new(path).parent() {
+        fs::create_dir_all(parent)?;
+    }
     fs::write(path, json)
 }
 
