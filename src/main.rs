@@ -40,6 +40,7 @@ struct App {
 #[derive(Clone, Copy, PartialEq)]
 enum CurrentLayout {
     Task,
+    Help,
     #[allow(dead_code)]
     Exit,
 }
@@ -49,6 +50,7 @@ enum CurrentInterface {
     TaskMenu,
     TaskBody,
     Write,
+    Help,
     #[allow(dead_code)]
     Exit, // TODO: confirm exit
 }
@@ -186,6 +188,7 @@ impl App {
             CurrentInterface::TaskMenu => self.key_event_task_menu(key_event),
             CurrentInterface::TaskBody => self.key_event_task_body(key_event),
             CurrentInterface::Write => self.key_event_write(key_event),
+            CurrentInterface::Help => self.key_event_help(key_event),
             CurrentInterface::Exit => {} // TODO: confirm exit
         }
     }
@@ -384,6 +387,11 @@ impl App {
         }
     }
 
+    fn key_event_help(&mut self, key_event: KeyEvent) {
+        // TODO: help key inputs
+        todo!("Implement help key events");
+    }
+
     fn key_event_write(&mut self, key_event: KeyEvent) {
         match (key_event.code, key_event.modifiers) {
             (KeyCode::Enter, KeyModifiers::NONE) => {
@@ -540,6 +548,7 @@ impl Widget for &mut App {
     fn render(self, area: Rect, buf: &mut Buffer) {
         match self.current_layout {
             CurrentLayout::Task => self.render_task_layout(area, buf),
+            CurrentLayout::Help => todo!("Implement help layout rendering"),
             CurrentLayout::Exit => {} // TODO: confirm exit
         }
     }
