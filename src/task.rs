@@ -91,6 +91,10 @@ impl TaskList {
         self.tasks.push(task);
     }
 
+    pub fn insert_task(&mut self, index: usize, task: Task) {
+        self.tasks.insert(index, task);
+    }
+
     pub fn remove_task(&mut self, index: usize) -> bool {
         if index < self.tasks.len() {
             self.tasks.remove(index);

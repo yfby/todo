@@ -246,10 +246,17 @@ impl App {
                             .selected()
                             .and_then(|index| self.task_collection.get_list_mut(index))
                         {
-                            task_list.add_task(crate::task::Task::new(
-                                self.write_input.final_input(),
-                                None,
-                            ));
+                            if let Some(index) = self.task_state.selected() {
+                                task_list.insert_task(
+                                    index + 1,
+                                    crate::task::Task::new(self.write_input.final_input(), None),
+                                );
+                            } else {
+                                task_list.add_task(crate::task::Task::new(
+                                    self.write_input.final_input(),
+                                    None,
+                                ));
+                            }
                         }
                     }
                     WriteType::RenameMenu => {
@@ -299,13 +306,19 @@ impl App {
                 self.current_layout = self.previous_layout;
                 self.current_interface = self.previous_interface;
             }
-            (crossterm::event::KeyCode::Char(to_insert), KeyModifiers::NONE | KeyModifiers::SHIFT) =>
-            {
-                self.write_input.enter_char(to_insert)
+            (
+                crossterm::event::KeyCode::Char(to_insert),
+                KeyModifiers::NONE | KeyModifiers::SHIFT,
+            ) => self.write_input.enter_char(to_insert),
+            (crossterm::event::KeyCode::Backspace, KeyModifiers::NONE) => {
+                self.write_input.delete_char()
             }
-            (crossterm::event::KeyCode::Backspace, KeyModifiers::NONE) => self.write_input.delete_char(),
-            (crossterm::event::KeyCode::Left, KeyModifiers::NONE) => self.write_input.move_cursor_left(),
-            (crossterm::event::KeyCode::Right, KeyModifiers::NONE) => self.write_input.move_cursor_right(),
+            (crossterm::event::KeyCode::Left, KeyModifiers::NONE) => {
+                self.write_input.move_cursor_left()
+            }
+            (crossterm::event::KeyCode::Right, KeyModifiers::NONE) => {
+                self.write_input.move_cursor_right()
+            }
             (crossterm::event::KeyCode::Char('a'), KeyModifiers::CONTROL) => {
                 self.write_input.character_index = 0
             }
